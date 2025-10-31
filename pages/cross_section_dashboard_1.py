@@ -1,5 +1,3 @@
-# streamlit_hist_cs.py — simulated cross-section histograms
-
 import streamlit as st
 import pandas as pd
 import numpy as np
