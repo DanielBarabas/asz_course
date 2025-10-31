@@ -19,17 +19,17 @@ Dashboards: cross_section_dashboard.py and panel_dashboard.py (type `streamlit r
     - run regressions within industries --> DONE
     - user can choose industry, x and y, add a line (linear, quadratic, cubic, or stepwise function - 5 and 20) --> DONE
     - add winzorize here as well --> DONE
-    - Have a compare part, where two scatterplots of two industries can be compared
-    - it should show the function parameters (can be turned off)
+    - Have a compare part, where two scatterplots of two industries can be compared --> DONE
+    - it should show the function parameters (can be turned off) -->DONE
 
 ### Multivariate regression
     - similar to already existing dashboard
-    - y: sales growth (2 versions: 2021-2019 over 2019 and log2021-log2019)
-    - user can choose X-s - as in book -> for now use variables that we already export
-    - each variable can be added in log
-    - 3 categories for emp and sales
-    - 1 interaction: emp_cat * ownership
-    - if everything is ready, do the same where y: exit between 2019 and 2021
+    - y: sales growth (2 versions: 2021-2019 over 2019 and log2021-log2019) --> DONE
+    - user can choose X-s - as in book -> for now use variables that we already export --> DONE
+    - each variable can be added in log --> DONE
+    - 3 categories for emp --> DONE
+    - 1 interaction: emp_cat * ownership --> DONE
+    - if everything is ready, do the same where y: exit between 2019 and 2021 --> TODO
 
 #### Server things: 
     - by industry distributions --> DONE
