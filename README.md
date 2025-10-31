@@ -30,6 +30,7 @@ Dashboards: cross_section_dashboard.py and panel_dashboard.py (type `streamlit r
     - 3 categories for emp --> DONE
     - 1 interaction: emp_cat * ownership --> DONE
     - if everything is ready, do the same where y: exit between 2019 and 2021 --> TODO
+    - TODO: Format (now everything is all over the place!)
 
 #### Server things: 
     - by industry distributions --> DONE
