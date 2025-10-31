@@ -13,11 +13,9 @@ try:
 except Exception:
     HAS_LOWESS = False
 
-# ----------------------- Look & feel -----------------------
 color = ["#3a5e8c", "#10a53d", "#541352", "#ffcf20", "#2f9aa0"]
 st.set_page_config(page_title='Scatter — Firms (HU cross-section, simulated)', layout='wide')
 
-# ----------------------- Loaders ---------------------------
 @st.cache_data
 def load_cross_section(path: str = 'data/synthetic/sim_cs2019_by_nace2_withcats.parquet') -> pd.DataFrame:
     p = Path(path)
@@ -25,81 +23,63 @@ def load_cross_section(path: str = 'data/synthetic/sim_cs2019_by_nace2_withcats.
         st.error(f"File not found: {p}")
         st.stop()
     df = pd.read_parquet(p).copy()
-    # ensure a clean 2-digit NACE code
-    if "nace2" in df.columns:
-        df["nace2_2d"] = (
-            df["nace2"]
-            .astype(str)
-            .str.extract(r"(\d+)", expand=False)
-            .fillna("")
-            .str.zfill(2)
-            .str[:2]
-        )
-    else:
-        st.error("Column `nace2` not found in the simulated data.")
+    need = {"nace2", "nace2_name_code"}
+    missing = need - set(df.columns)
+    if missing:
+        st.error(f"Missing columns in data: {missing}")
         st.stop()
+    df["nace2"] = df["nace2"].astype(str)
+    df["nace2_name_code"] = df["nace2_name_code"].astype(str)
     return df
 
-@st.cache_data
-def load_nace2_labels(path: str = "nace2_labels.xlsx") -> dict:
-    p = Path(path)
-    if not p.exists():
-        return {}
-    df = pd.read_excel(p, dtype=str)
-    if "nace2" not in df.columns or "name_hu" not in df.columns:
-        df.columns = [c.lower() for c in df.columns]
-    df["nace2"] = (
-        df["nace2"].astype(str).str.extract(r"(\d+)", expand=False).fillna("").str.zfill(2).str[:2]
-    )
-    df["name_hu"] = df["name_hu"].astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
-    df = df[df["nace2"].str.len() == 2].drop_duplicates("nace2")
-    return dict(zip(df["nace2"], df["name_hu"]))
-
 cs = load_cross_section()
-labels = load_nace2_labels()
 
 # ----------------------- UI: header ------------------------
 st.title('Scatter — 2019 cross-section (simulated)')
-st.markdown("Pick an **industry**, two **variables** and an optional **fit**. Monetary values are **1000 HUF**.")
+st.markdown("Pick an **industry**, two **variables** and an optional **fit**. Monetary values shown in **million HUF**.")
 
 # ----------------------- Sidebar ---------------------------
 st.sidebar.header("Settings")
 
-# Industry selector with names (+ ALL option)
-codes = sorted(cs["nace2_2d"].unique(), key=lambda c: int(c))
-opts = ["All industries (ALL)"]
-code_from_label = {"All industries (ALL)": "ALL"}
-for c in codes:
-    name = labels.get(c, None)
-    lab = f"{name} ({c})" if name else f"NACE {c} ({c})"
-    opts.append(lab); code_from_label[lab] = c
+# Industry options: ALL first, then by code
+lab_df = pd.DataFrame({"label": cs["nace2_name_code"].dropna().unique()})
+lab_df["__code"] = pd.to_numeric(lab_df["label"].str.extract(r"\((\d{1,2})\)\s*$", expand=False), errors="coerce")
+lab_df = lab_df.sort_values(["__code", "label"]).drop(columns="__code")
+opts = ["All industries (ALL)"] + lab_df["label"].tolist()
 
-def_idx = (1 + codes.index("10")) if "10" in codes else 0
-sel_label = st.sidebar.selectbox("Industry (NACE2)", opts, index=def_idx)
-code = code_from_label[sel_label]
+sel_label = st.sidebar.selectbox("Industry", opts, index=0)
+scope_all = sel_label == "All industries (ALL)"
 
-# Variable menu — match simulated column names
-var_map = {
-    'Sales (1000 HUF)': 'sales_clean',
-    'Tangible assets (1000 HUF)': 'tanass_clean',
-    'Total assets (1000 HUF)': 'eszk',
-    'Personal expenses (1000 HUF)': 'persexp_clean',
-    'Pretax profit (1000 HUF)': 'pretax',
-    'EBIT (1000 HUF)': 'ereduzem',
-    'Export value (1000 HUF)': 'export_value',
-    'Liabilities (1000 HUF)': 'liabilities',
+# Variables (mark monetary with “(million HUF)”)
+MONETARY_VARS = {
+    'Sales (million HUF)': 'sales_clean',
+    'Tangible assets (million HUF)': 'tanass_clean',
+    'Total assets (million HUF)': 'eszk',
+    'Personal expenses (million HUF)': 'persexp_clean',
+    'Pretax profit (million HUF)': 'pretax',
+    'EBIT (million HUF)': 'ereduzem',
+    'Export value (million HUF)': 'export_value',
+    'Liabilities (million HUF)': 'liabilities',
+}
+NON_MONETARY_VARS = {
     'Employment (headcount)': 'emp',
     'Age (years)': 'age',
 }
+var_map = {**MONETARY_VARS, **NON_MONETARY_VARS}
+
 available = {k: v for k, v in var_map.items() if v in cs.columns}
 x_label = st.sidebar.selectbox("X variable", list(available.keys()), index=0)
 y_label = st.sidebar.selectbox("Y variable", list(available.keys()), index=min(4, len(available)-1))
 xvar = available[x_label]; yvar = available[y_label]
+x_is_monetary = xvar in MONETARY_VARS.values()
+y_is_monetary = yvar in MONETARY_VARS.values()
 
-# Tails handling (X-axis)
-st.sidebar.subheader("Tail handling (2% in X)")
-winsor = st.sidebar.checkbox("Winsorize", value=True)
-trim = st.sidebar.checkbox("Trim (exclude tails)", value=False)
+# Tails handling (2% tails) — X and Y separately
+st.sidebar.subheader("Tail handling (2% tails)")
+winsor_x = st.sidebar.checkbox("Winsorize X", value=True)
+trim_x   = st.sidebar.checkbox("Trim X (exclude tails)", value=False)
+winsor_y = st.sidebar.checkbox("Winsorize Y", value=True)
+trim_y   = st.sidebar.checkbox("Trim Y (exclude tails)", value=False)
 
 # Fit type
 fit_type = st.sidebar.selectbox(
@@ -110,37 +90,62 @@ fit_type = st.sidebar.selectbox(
 if fit_type == "LOWESS" and not HAS_LOWESS:
     st.sidebar.warning("statsmodels LOWESS not available; switch to another fit.")
 
+# Plot cosmetics
 alpha = st.sidebar.slider("Point opacity", 0.1, 1.0, 0.5, 0.05)
 size  = st.sidebar.slider("Point size", 5, 100, 20, 1)
 
+# Log scales
+logx = st.sidebar.checkbox("Log scale X", value=False)
+logy = st.sidebar.checkbox("Log scale Y", value=False)
+
 # ----------------------- Filter & prep ---------------------
-df = cs.copy() if code == "ALL" else cs[cs["nace2_2d"] == code].copy()
+df = cs.copy() if scope_all else cs[cs["nace2_name_code"] == sel_label].copy()
 df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=[xvar, yvar])
+
+# scale to million HUF for monetary variables (before tail handling)
+if x_is_monetary:
+    df[xvar] = df[xvar] / 1000.0
+if y_is_monetary:
+    df[yvar] = df[yvar] / 1000.0
+
+# If a log axis is requested, drop non-positive values on that axis (after scaling)
+if logx:
+    df = df[df[xvar] > 0]
+if logy:
+    df = df[df[yvar] > 0]
 
 if df.empty:
     st.error("No data for the selected scope.")
     st.stop()
 
-def apply_tails(s: pd.Series) -> pd.Series:
+def apply_tails(s: pd.Series, do_winsor: bool, do_trim: bool) -> pd.Series:
     s = s.dropna()
     if len(s) < 5:
         return s
     q2, q98 = np.percentile(s, [2, 98])
-    if trim:
+    if do_trim:
         return s[(s > q2) & (s < q98)]
-    return s.clip(q2, q98) if winsor else s
+    return s.clip(q2, q98) if do_winsor else s
 
-x = apply_tails(df[xvar])
-y = df[yvar]
+x = apply_tails(df[xvar], winsor_x, trim_x)
+y = apply_tails(df[yvar], winsor_y, trim_y)
+
+# align indices (keep rows present in both after tail handling)
 idx = x.index.intersection(y.index)
 plot_df = pd.DataFrame({xvar: x.loc[idx], yvar: y.loc[idx]})
+
+if plot_df.empty:
+    st.error("No data after tail handling. Try relaxing trim/winsor or log settings.")
+    st.stop()
 
 # ----------------------- Plot -----------------------------
 fig, ax = plt.subplots()
 sns.scatterplot(data=plot_df, x=xvar, y=yvar, s=size, alpha=alpha,
                 edgecolor='white', linewidth=0.2, color=color[0], ax=ax)
 
-# Fit overlays
+coef_text = None  # will populate for Linear/Quadratic/Cubic
+
+# Fit overlays (on displayed scale)
 if fit_type in {"Linear", "Quadratic", "Cubic"} and len(plot_df) >= 10:
     deg = {"Linear": 1, "Quadratic": 2, "Cubic": 3}[fit_type]
     xx = plot_df[xvar].to_numpy(); yy = plot_df[yvar].to_numpy()
@@ -149,6 +154,16 @@ if fit_type in {"Linear", "Quadratic", "Cubic"} and len(plot_df) >= 10:
     poly = np.poly1d(coef)
     xs = np.linspace(xx_sorted.min(), xx_sorted.max(), 400)
     ax.plot(xs, poly(xs), color=color[1], linewidth=2, alpha=0.9, label=f"{fit_type} fit")
+
+    if deg == 1:
+        a, b = coef[1], coef[0]
+        coef_text = f"Linear fit: y = {a:.4g} + {b:.4g}·x"
+    elif deg == 2:
+        a, b, c = coef[2], coef[1], coef[0]
+        coef_text = f"Quadratic fit: y = {a:.4g} + {b:.4g}·x + {c:.4g}·x²"
+    else:
+        a, b, c, d = coef[3], coef[2], coef[1], coef[0]
+        coef_text = f"Cubic fit: y = {a:.4g} + {b:.4g}·x + {c:.4g}·x² + {d:.4g}·x³"
 
 elif fit_type == "LOWESS" and HAS_LOWESS and len(plot_df) >= 10:
     z = lowess(plot_df[yvar].values, plot_df[xvar].values, frac=0.25, return_sorted=True)
@@ -167,17 +182,32 @@ elif fit_type.startswith("Stepwise") and len(plot_df) >= 10:
 # Axes labels & formatting
 ax.set_xlabel(x_label); ax.set_ylabel(y_label)
 ax.spines[['top', 'right']].set_visible(False)
+
+# ticks: no scientific notation + separators; decimals for monetary, integers otherwise
 ax.ticklabel_format(style='plain', axis='x')
-ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}"))
+ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.2f}" if x_is_monetary else f"{v:,.0f}"))
 ax.tick_params(axis='x', labelrotation=25)
+ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.2f}" if y_is_monetary else f"{v:,.0f}"))
+
+# log toggles
+if logx:
+    ax.set_xscale('log')
+if logy:
+    ax.set_yscale('log')
 
 plt.tight_layout()
 st.pyplot(fig)
 
 # ----------------------- Summary --------------------------
-scope_label = "All industries" if code == "ALL" else f"{labels.get(code, f'NACE {code}')} ({code})"
-tail_note = "trim" if trim else ("winsorize" if winsor else "raw")
+scope_label = sel_label
+tail_note_x = "trim" if trim_x else ("winsorize" if winsor_x else "raw")
+tail_note_y = "trim" if trim_y else ("winsorize" if winsor_y else "raw")
+
 st.markdown(
     f"**Scope:** {scope_label} · **X:** `{x_label}` · **Y:** `{y_label}` · "
-    f"**Obs:** {len(plot_df):,} · **Tails:** {tail_note} · **Fit:** {fit_type}"
+    f"**Obs:** {len(plot_df):,} · **Tails (X/Y):** {tail_note_x} / {tail_note_y} · "
+    f"**Fit:** {fit_type} · **Log (X/Y):** {logx} / {logy}"
 )
+
+if coef_text is not None:
+    st.markdown(f"**Fit parameters:** {coef_text}")
