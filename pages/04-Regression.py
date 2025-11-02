@@ -43,8 +43,6 @@ Outcomes supported:
 - **Relative growth**: (sales_lead − sales) / sales  
 - **Log growth**: ln(sales_lead) − ln(sales)
 
-The app will automatically use the first available “lead” variables among:
-`sales_lead_sim` / `ln_sales_lead_sim` (preferred) or `sales22_lead2` / `ln_sales22_lead2`.
 """
 )
 
@@ -128,36 +126,39 @@ else:  # log growth
 # Clean outcome
 y = pd.to_numeric(y, errors="coerce").replace([np.inf, -np.inf], np.nan)
 
+
 # ------------------------------------------------------
-# RHS pickers  (per-variable quadratic controls + emp_size + interaction)
+# RHS pickers  (auto small-cardinality categoricals + per-var quad/log + interactions)
 # ------------------------------------------------------
 exclude_cols = {
     "nace2_name_code", "nace2", "growth_sim", "ln_sales_lead_sim", "sales_lead_sim",
-    "ln_sales22_lead2", "sales22_lead2", "ln_sales", "name_hu","row_id"
+    "ln_sales22_lead2", "sales22_lead2", "ln_sales", "name_hu", "row_id","exit","county"
 }
+MAX_CAT_LEVELS = 10
 
 is_num  = pd.api.types.is_numeric_dtype
 is_bool = pd.api.types.is_bool_dtype
 
-numeric_cols = [
-    c for c in d.columns
-    if is_num(d[c]) and not is_bool(d[c]) and c not in exclude_cols
-]
-categorical_cols = [
-    c for c in d.columns
-    if (d[c].dtype == "object" or pd.api.types.is_categorical_dtype(d[c])) and c not in exclude_cols
-]
+# Classify columns:
+candidate_cols = [c for c in d.columns if c not in exclude_cols]
+categorical_cols, numeric_cols = [], []
+for c in candidate_cols:
+    s = d[c]
+    nun = s.nunique(dropna=True)
+    if (
+        is_bool(s) or
+        s.dtype == "object" or
+        pd.api.types.is_categorical_dtype(s) or
+        nun <= MAX_CAT_LEVELS
+    ):
+        categorical_cols.append(c)
+    elif is_num(s):
+        numeric_cols.append(c)
+# Note: emp_size naturally falls into categorical_cols (4 levels)
 
 st.sidebar.subheader("Regressors (RHS)")
 cont_vars = st.sidebar.multiselect("Continuous regressors", options=sorted(numeric_cols))
 cat_vars  = st.sidebar.multiselect("Categorical regressors", options=sorted(categorical_cols))
-
-# --- Add employment size categorical
-include_emp_size = st.sidebar.checkbox("Add employment size classes (from emp)", value=True and "emp_size" in d.columns)
-if include_emp_size and "emp_size" in d.columns:
-    if "emp_size" not in cat_vars:
-        cat_vars = cat_vars + ["emp_size"]
-
 
 # --- Per-variable quadratic toggles
 st.sidebar.markdown("**Quadratic terms (choose per continuous variable):**")
@@ -175,20 +176,15 @@ for v in cont_vars:
         log_selected.append(v)
 log_set = set(log_selected)
 
-# Robust SE
-robust = st.sidebar.checkbox("Use robust (HC1) standard errors", value=True)
-
-# --- Optional interaction with ownership
-# pick ownership variable from available categoricals (default to firm_owner if present)
+st.sidebar.markdown("**Interaction:**")
+# --- Optional interaction with ownership (emp_size × ownership)
 ownership_default_idx = 0
 ownership_options = [c for c in sorted(set(["firm_owner"]) | set(categorical_cols)) if c in d.columns]
 if "firm_owner" in ownership_options:
     ownership_default_idx = ownership_options.index("firm_owner")
 
-interact_emp_owner = st.sidebar.checkbox("Interact employment size with ownership", value=False)
-owner_var = st.sidebar.selectbox("Ownership variable for interaction", options=ownership_options, index=ownership_default_idx, disabled=not interact_emp_owner)
-
-
+interact_emp_owner = st.sidebar.checkbox("Interact employment size (emp_size) with ownership", value=False)
+owner_var = "firm_owner"
 
 rhs_cols = cont_vars + cat_vars
 if not rhs_cols:
@@ -198,7 +194,11 @@ if not rhs_cols:
 # Build working frame (drop NA in raw inputs used)
 needed_cols = set(rhs_cols) | {"__y__"}
 if interact_emp_owner:
+    if "emp_size" not in d.columns:
+        st.error("`emp_size` is not available for interaction. (It should be created from `emp` earlier.)")
+        st.stop()
     needed_cols |= {"emp_size", owner_var}
+
 dwork = d.copy()
 dwork["__y__"] = y
 dwork = dwork[list(needed_cols)].replace([np.inf, -np.inf], np.nan).dropna()
@@ -206,6 +206,7 @@ dwork = dwork[list(needed_cols)].replace([np.inf, -np.inf], np.nan).dropna()
 if dwork.empty:
     st.error("No observations available after dropping missing values in outcome/regressors.")
     st.stop()
+
 
 # ------------------------------------------------------
 # Design matrix
@@ -279,7 +280,7 @@ if X.shape[0] < 5 or X.shape[1] == 0:
 
 X = sm.add_constant(X, has_constant="add")
 model = sm.OLS(Y.astype(float), X.astype(float))
-res = model.fit(cov_type="HC1") if robust else model.fit()
+res = model.fit(cov_type="HC1") 
 
 # ------------------------------------------------------
 # Pretty Output (stars + SE in parentheses)
@@ -341,15 +342,37 @@ table_df = pd.DataFrame(rows, columns=["", "Model 1"])
 
 # Render with Streamlit styling
 st.table(table_df)
-
-# Divider + bottom stats
+# Divider + bottom stats + baselines
 st.markdown("---")
 st.markdown(f"**R-squared**: {res.rsquared:.3f}")
 
-note = "Robust standard errors (HC1) are in parentheses." if robust \
-       else "Conventional standard errors are in parentheses."
+note = "Robust standard errors (HC1) are in parentheses."
+
+# --- Baselines (drop-first) for all categoricals used
+def _baseline_of(series: pd.Series) -> str:
+    s = series.astype("category")
+    cats = list(s.cat.categories)
+    return "—" if len(cats) == 0 else str(cats[0])
+
+cats_in_model = set(cat_vars)
+# Also include categoricals that appear only in interaction
+if 'interact_emp_owner' in locals() and interact_emp_owner:
+    cats_in_model |= {"emp_size", owner_var}
+
+baseline_lines = []
+for v in sorted(cats_in_model):
+    if v in dwork.columns:
+        baseline_lines.append(f"{v}: {_baseline_of(dwork[v])}")
+
+baselines_text = " | ".join(baseline_lines) if baseline_lines else "None"
+
 st.markdown(
     f"<span style='font-size:0.9em'><em>Notes:</em> {note} "
-    "Significance levels: *** p<0.01, ** p<0.05, * p<0.1.</span>",
-    unsafe_allow_html=True
+    "Significance levels: *** p&lt;0.01, ** p&lt;0.05, * p&lt;0.1.</span>",
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    f"<span style='font-size:0.9em'><em>Category baselines (drop-first):</em> {baselines_text}</span>",
+    unsafe_allow_html=True,
 )
