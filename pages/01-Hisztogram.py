@@ -88,17 +88,15 @@ var = var_map[var_label]
 is_monetary = var in MONETARY_VARS.values()
 
 # -------------------------- Tail handling (mutually exclusive) --------------------------
-st.sidebar.subheader("Szélsőérték kezelés (csak egy választható)")
-tail_mode = st.sidebar.radio(
-    "Mód",
-    options=[
-        "Nincs szűrés (összes érték)",
-        "Winsorizálás (alsó/felső 2%)",
-        "Szélsők kizárása (alsó/felső 2%)",
-        "Kézi minimum/maximum"     
-    ],
-    index=0
-)
+st.sidebar.subheader("Szélsőérték kezelés")
+FILTER_OPTIONS = [
+    "Nincs szűrés",
+    "Winsor top–bottom 2%",
+    "Levágás top–bottom 2%",
+    "Kézi minimum/maximum"
+]
+tail_mode = st.sidebar.selectbox("X szélsőérték-kezelése", FILTER_OPTIONS, index=0)
+
 
 
 # ----------------------------- Histogram settings -----------------------------

@@ -223,7 +223,7 @@ else:
     # Egyszintű fejléc: csak a megjelenített nevek
     to_show = sample_df.rename(columns=lambda c: DISPLAY_NAMES.get(c, c))
 
-    st.subheader("10 véletlen vállalat")
+    st.subheader("100 véletlen vállalat")
     st.dataframe(to_show, use_container_width=True, hide_index=True)
 
     st.caption("Tipp: Az oszlopok szélessége a fejléc szélén húzással állítható.")
