@@ -14,6 +14,7 @@ Dashboards: cross_section_dashboard.py and panel_dashboard.py (type `streamlit r
         - Add moments up to 5 --> DONE
     - Add winzorize button to dashboards (2% at top and bottom) --> DONE
     - Hist settings: no need to add n filter --> DONE
+    - Konkrét érték alapján is legyen szűrés
 
 ### Scatterplot
     - run regressions within industries --> DONE
@@ -21,6 +22,8 @@ Dashboards: cross_section_dashboard.py and panel_dashboard.py (type `streamlit r
     - add winzorize here as well --> DONE
     - Have a compare part, where two scatterplots of two industries can be compared --> DONE
     - it should show the function parameters (can be turned off) -->DONE
+    - baseline: ne legyen vonal
+    - log-log esetben is legyen lineáris!
 
 ### Multivariate regression
     - similar to already existing dashboard
@@ -31,6 +34,8 @@ Dashboards: cross_section_dashboard.py and panel_dashboard.py (type `streamlit r
     - 1 interaction: emp_cat * ownership --> DONE
     - if everything is ready, do the same where y: exit between 2019 and 2021 --> TODO
     - TODO: Format (now everything is all over the place!) --> DONE
+    - legyen baseline
+    - legyen nem csak regresszió, hanem átlagkülönbségek közötti
 
 #### Server things: 
     - by industry distributions --> DONE
@@ -41,3 +46,16 @@ Dashboards: cross_section_dashboard.py and panel_dashboard.py (type `streamlit r
     - winzorize button --> DONE
     - remove y filter --> DONE
     - winzorize button and hist option should go to "under the hood"
+
+    - Add Opten logo!
+    - Make all Hungarian?
+    - CHOOSE AND INDUSTRY, CHOOSE A VARIABLE SHOW TIME SERIES OF INDUSTRY
+
+    Sample:
+    all large firms, kkv 50%, 5 fo alatt 20% --NO: do 20% random
+    - legyen egy opten_firms nevű dashboard - ez 5-ig legyen meg!! Gergővel beszéljem meg, hogy ez legyen egy placeholder
+    - első slide legvégén van a változók leírása van, nézzem át, és írjam le ha valami nem lesz
+    - adattáblába belenézés legyen a legelején!!! - ez legyen most péntekre legyen meg
+### Lineplot
+    - x: évek, y: teljes/átlagos össze
+    - szűrés: kiírás kódonként
